@@ -112,29 +112,41 @@
       <!-- 右側：迴歸參數結果與圖表 -->
       <section class="lg:col-span-7 space-y-6">
         <!-- 迴歸參數指標卡片 -->
-        <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
           <!-- 斜率 (m) -->
           <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col justify-between">
             <span class="text-xs font-medium text-slate-500 uppercase tracking-wider flex items-center justify-between">
-              斜率 (Slope, m)
+              斜率 (m)
               <i data-lucide="trending-up" class="w-4 h-4 text-slate-400"></i>
             </span>
             <div class="mt-2">
-              <span id="resSlope" class="text-xl font-bold font-mono text-slate-900 tracking-tight">--</span>
+              <span id="resSlope" class="text-lg sm:text-xl font-bold font-mono text-slate-900 tracking-tight">--</span>
             </div>
-            <p class="text-[11px] text-slate-400 mt-1">單位靈敏度 (Response / Conc.)</p>
+            <p class="text-[11px] text-slate-400 mt-1">單位靈敏度</p>
           </div>
 
           <!-- 截距 (c) -->
           <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col justify-between">
             <span class="text-xs font-medium text-slate-500 uppercase tracking-wider flex items-center justify-between">
-              截距 (Intercept, c)
+              截距 (c)
               <i data-lucide="move-vertical" class="w-4 h-4 text-slate-400"></i>
             </span>
             <div class="mt-2">
-              <span id="resIntercept" class="text-xl font-bold font-mono text-slate-900 tracking-tight">--</span>
+              <span id="resIntercept" class="text-lg sm:text-xl font-bold font-mono text-slate-900 tracking-tight">--</span>
             </div>
-            <p class="text-[11px] text-slate-400 mt-1">空白或儀器背景值</p>
+            <p class="text-[11px] text-slate-400 mt-1">背景訊號值</p>
+          </div>
+
+          <!-- 相關係數 (R) -->
+          <div id="cardR" class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col justify-between transition-colors">
+            <span class="text-xs font-medium text-slate-500 uppercase tracking-wider flex items-center justify-between">
+              相關係數 (R)
+              <i data-lucide="link" class="w-4 h-4 text-indigo-400" id="iconRStatus"></i>
+            </span>
+            <div class="mt-2">
+              <span id="resR" class="text-lg sm:text-xl font-bold font-mono text-slate-900 tracking-tight">--</span>
+            </div>
+            <p id="badgeRHint" class="text-[11px] text-slate-400 mt-1">線性關聯度</p>
           </div>
 
           <!-- 決定係數 (R²) -->
@@ -144,7 +156,7 @@
               <i data-lucide="check-circle-2" class="w-4 h-4 text-emerald-500" id="iconR2Status"></i>
             </span>
             <div class="mt-2">
-              <span id="resR2" class="text-xl font-bold font-mono text-slate-900 tracking-tight">--</span>
+              <span id="resR2" class="text-lg sm:text-xl font-bold font-mono text-slate-900 tracking-tight">--</span>
             </div>
             <p id="badgeR2Hint" class="text-[11px] text-emerald-600 font-medium mt-1">線性良好 (R² ≥ 0.995)</p>
           </div>
@@ -508,7 +520,7 @@
       // 截距 (Intercept, c)
       const intercept = (sumY - (slope * sumX)) / n;
 
-      // 決定係數 R²
+      // 決定係數 R² 與皮爾森相關係數 R
       const ssTotal = sumY2 - (sumY * sumY) / n;
       const ssResidual = points.reduce((acc, p) => {
         const yPred = slope * p.x + intercept;
@@ -524,9 +536,13 @@
         r2 = 1; // 所有 Y 完全相同時的邊界處理
       }
 
+      // 計算相關係數 R (符號與斜率一致)
+      const r = (slope >= 0 ? 1 : -1) * Math.sqrt(r2);
+
       return {
         slope,
         intercept,
+        r,
         r2,
         points,
         minX: Math.min(...points.map(p => p.x)),
@@ -589,7 +605,40 @@
       // 更新數值顯示（6位有效數字）
       document.getElementById('resSlope').innerText = formatSignificantDigits(reg.slope, 6);
       document.getElementById('resIntercept').innerText = formatSignificantDigits(reg.intercept, 6);
+      document.getElementById('resR').innerText = formatSignificantDigits(reg.r, 6);
       document.getElementById('resR2').innerText = formatSignificantDigits(reg.r2, 6);
+
+      // R 值小於 0.995 判斷與反黃底效果
+      const cardR = document.getElementById('cardR');
+      const badgeRHint = document.getElementById('badgeRHint');
+      const resRElem = document.getElementById('resR');
+      const stdInputs = document.querySelectorAll('.std-conc, .std-signal');
+
+      if (Math.abs(reg.r) < 0.995) {
+        // R 卡片反黃底警示
+        cardR.className = 'bg-amber-100 p-4 rounded-xl border-2 border-amber-400 shadow-sm flex flex-col justify-between transition-colors';
+        resRElem.className = 'text-lg sm:text-xl font-bold font-mono text-amber-900 tracking-tight';
+        badgeRHint.innerText = '相關係數偏低 (R < 0.995)';
+        badgeRHint.className = 'text-[11px] text-amber-800 font-bold mt-1';
+
+        // 標準品輸入表格欄位反黃底
+        stdInputs.forEach(input => {
+          input.classList.remove('bg-white', 'border-slate-300');
+          input.classList.add('bg-amber-50', 'border-amber-300', 'text-amber-900');
+        });
+      } else {
+        // R >= 0.995 恢復正常外觀
+        cardR.className = 'bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col justify-between transition-colors';
+        resRElem.className = 'text-lg sm:text-xl font-bold font-mono text-slate-900 tracking-tight';
+        badgeRHint.innerText = '線性高度相關 (R ≥ 0.995)';
+        badgeRHint.className = 'text-[11px] text-indigo-600 font-medium mt-1';
+
+        // 標準品輸入表格欄位恢復白底
+        stdInputs.forEach(input => {
+          input.classList.remove('bg-amber-50', 'border-amber-300', 'text-amber-900');
+          input.classList.add('bg-white', 'border-slate-300');
+        });
+      }
 
       // 方程式字串生成
       const sign = reg.intercept >= 0 ? '+' : '-';
@@ -715,6 +764,7 @@
       csv += '=== 檢量線分析報告 ===\r\n\r\n';
       csv += `斜率 (m),${formatSignificantDigits(currentRegression.slope, 6)}\r\n`;
       csv += `截距 (c),${formatSignificantDigits(currentRegression.intercept, 6)}\r\n`;
+      csv += `相關係數 (R),${formatSignificantDigits(currentRegression.r, 6)}\r\n`;
       csv += `決定係數 (R²),${formatSignificantDigits(currentRegression.r2, 6)}\r\n`;
       csv += `回歸方程式,y = ${formatSignificantDigits(currentRegression.slope, 6)} * x + ${formatSignificantDigits(currentRegression.intercept, 6)}\r\n`;
       csv += `線性評定,${currentRegression.r2 < 0.995 ? '檢量線線性不佳 (R² < 0.995)' : '線性良好 (R² ≥ 0.995)'}\r\n\r\n`;
