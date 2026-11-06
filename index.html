@@ -1,0 +1,850 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>檢量線計算機 - 標準曲線與樣品定量分析</title>
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Chart.js -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;600;700&display=swap');
+    body {
+      font-family: 'Noto Sans TC', sans-serif;
+    }
+    input[type=number]::-webkit-inner-spin-button, 
+    input[type=number]::-webkit-outer-spin-button { 
+      -webkit-appearance: none; 
+      margin: 0; 
+    }
+    input[type=number] {
+      -moz-appearance: textfield;
+    }
+  </style>
+</head>
+<body class="bg-slate-50 text-slate-800 min-h-screen">
+  <!-- 頂部導航列 -->
+  <header class="bg-white border-b border-slate-200 sticky top-0 z-30 shadow-sm">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+      <div class="flex items-center space-x-3">
+        <div class="bg-indigo-600 text-white p-2 rounded-lg shadow-sm">
+          <i data-lucide="line-chart" class="w-6 h-6"></i>
+        </div>
+        <div>
+          <h1 class="text-xl font-bold text-slate-900 tracking-tight">檢量線計算機</h1>
+          <p class="text-xs text-slate-500 font-medium">線性迴歸最小平方法與未知樣品定量分析系統</p>
+        </div>
+      </div>
+      <div class="flex items-center space-x-2">
+        <button id="btnResetTest" class="inline-flex items-center px-3 py-1.5 border border-slate-300 text-xs font-medium rounded-md text-slate-700 bg-white hover:bg-slate-50 transition-colors shadow-sm">
+          <i data-lucide="rotate-ccw" class="w-3.5 h-3.5 mr-1 text-slate-500"></i> 重設測試資料
+        </button>
+        <button id="btnExportCSV" class="inline-flex items-center px-3 py-1.5 border border-slate-300 text-xs font-medium rounded-md text-slate-700 bg-white hover:bg-slate-50 transition-colors shadow-sm">
+          <i data-lucide="download" class="w-3.5 h-3.5 mr-1 text-slate-500"></i> 匯出報表
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- 主內容區 -->
+  <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
+
+    <!-- 警示訊息條 (動態控制) -->
+    <div id="statusAlert" class="hidden rounded-xl border p-4 shadow-sm transition-all duration-300">
+      <div class="flex items-start">
+        <div id="statusIcon" class="flex-shrink-0 mr-3"></div>
+        <div class="flex-1">
+          <h3 id="statusTitle" class="text-sm font-semibold"></h3>
+          <div id="statusDesc" class="mt-1 text-sm"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 上半部：標準品數據輸入 與 檢量線迴歸結果/圖表 -->
+    <div class="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+      
+      <!-- 左側：標準品輸入區 (5~8 組) -->
+      <section class="lg:col-span-5 bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
+        <div class="flex items-center justify-between mb-4 pb-3 border-b border-slate-100">
+          <div>
+            <h2 class="text-base font-bold text-slate-900 flex items-center gap-2">
+              <i data-lucide="flask-conical" class="w-5 h-5 text-indigo-600"></i>
+              標準品校正數據
+            </h2>
+            <p class="text-xs text-slate-500 mt-0.5">系統限定 5 至 8 組標準點進行迴歸</p>
+          </div>
+          <span id="stdPointsCount" class="text-xs font-semibold px-2.5 py-1 bg-indigo-50 text-indigo-700 rounded-full border border-indigo-100">
+            5 / 8 點
+          </span>
+        </div>
+
+        <!-- 標準品表格 -->
+        <div class="overflow-x-auto">
+          <table class="w-full text-left border-collapse text-sm">
+            <thead>
+              <tr class="bg-slate-50 text-slate-600 border-b border-slate-200">
+                <th class="py-2.5 px-3 font-semibold text-center w-12">#</th>
+                <th class="py-2.5 px-3 font-semibold">標準濃度 (µg/L)</th>
+                <th class="py-2.5 px-3 font-semibold">儀器訊號 (Response)</th>
+                <th class="py-2.5 px-2 text-center w-12">操作</th>
+              </tr>
+            </thead>
+            <tbody id="stdTableBody" class="divide-y divide-slate-100">
+              <!-- 動態生成標準點列 -->
+            </tbody>
+          </table>
+        </div>
+
+        <!-- 按鈕列 -->
+        <div class="mt-4 flex items-center justify-between gap-3">
+          <button id="btnAddStdRow" class="inline-flex items-center text-xs font-medium text-indigo-600 hover:text-indigo-800 bg-indigo-50 hover:bg-indigo-100 px-3 py-2 rounded-lg transition-colors">
+            <i data-lucide="plus-circle" class="w-4 h-4 mr-1.5"></i> 新增標準點
+          </button>
+          <button id="btnCalculate" class="inline-flex items-center justify-center text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-700 px-5 py-2 rounded-lg shadow-sm hover:shadow transition-all">
+            <i data-lucide="calculator" class="w-4 h-4 mr-1.5"></i> 開始計算檢量線
+          </button>
+        </div>
+      </section>
+
+      <!-- 右側：迴歸參數結果與圖表 -->
+      <section class="lg:col-span-7 space-y-6">
+        <!-- 迴歸參數指標卡片 -->
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <!-- 斜率 (m) -->
+          <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col justify-between">
+            <span class="text-xs font-medium text-slate-500 uppercase tracking-wider flex items-center justify-between">
+              斜率 (Slope, m)
+              <i data-lucide="trending-up" class="w-4 h-4 text-slate-400"></i>
+            </span>
+            <div class="mt-2">
+              <span id="resSlope" class="text-xl font-bold font-mono text-slate-900 tracking-tight">--</span>
+            </div>
+            <p class="text-[11px] text-slate-400 mt-1">單位靈敏度 (Response / Conc.)</p>
+          </div>
+
+          <!-- 截距 (c) -->
+          <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col justify-between">
+            <span class="text-xs font-medium text-slate-500 uppercase tracking-wider flex items-center justify-between">
+              截距 (Intercept, c)
+              <i data-lucide="move-vertical" class="w-4 h-4 text-slate-400"></i>
+            </span>
+            <div class="mt-2">
+              <span id="resIntercept" class="text-xl font-bold font-mono text-slate-900 tracking-tight">--</span>
+            </div>
+            <p class="text-[11px] text-slate-400 mt-1">空白或儀器背景值</p>
+          </div>
+
+          <!-- 決定係數 (R²) -->
+          <div id="cardR2" class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col justify-between transition-colors">
+            <span class="text-xs font-medium text-slate-500 uppercase tracking-wider flex items-center justify-between">
+              決定係數 (R²)
+              <i data-lucide="check-circle-2" class="w-4 h-4 text-emerald-500" id="iconR2Status"></i>
+            </span>
+            <div class="mt-2">
+              <span id="resR2" class="text-xl font-bold font-mono text-slate-900 tracking-tight">--</span>
+            </div>
+            <p id="badgeR2Hint" class="text-[11px] text-emerald-600 font-medium mt-1">線性良好 (R² ≥ 0.995)</p>
+          </div>
+        </div>
+
+        <!-- 迴歸方程式資訊條 -->
+        <div class="bg-indigo-50/70 border border-indigo-100 rounded-xl px-4 py-3 flex flex-wrap items-center justify-between gap-3 text-sm">
+          <div class="flex items-center space-x-2 text-indigo-900">
+            <span class="font-semibold">線性方程式：</span>
+            <span id="resEquation" class="font-mono font-bold text-indigo-700 bg-white px-2.5 py-0.5 rounded border border-indigo-200">
+              y = m · x + c
+            </span>
+          </div>
+          <div class="text-xs text-indigo-700">
+            有效數字格式化：<span class="font-bold">6 位有效數字</span>
+          </div>
+        </div>
+
+        <!-- 檢量線圖表 -->
+        <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
+          <div class="flex items-center justify-between mb-3">
+            <h3 class="text-sm font-bold text-slate-800 flex items-center gap-1.5">
+              <i data-lucide="scatter-chart" class="w-4 h-4 text-indigo-600"></i>
+              檢量線與樣品分佈圖
+            </h3>
+            <span class="text-xs text-slate-400">X: 濃度 (µg/L)　|　Y: 儀器訊號</span>
+          </div>
+          <div class="relative h-72 sm:h-80 w-full">
+            <canvas id="calibrationChart"></canvas>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <!-- 下半部：未知樣品定量分析 -->
+    <section class="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
+      <div class="flex flex-col sm:flex-row sm:items-center justify-between pb-4 border-b border-slate-100 gap-3">
+        <div>
+          <h2 class="text-base font-bold text-slate-900 flex items-center gap-2">
+            <i data-lucide="microscope" class="w-5 h-5 text-indigo-600"></i>
+            未知樣品定量計算 (Unknown Samples)
+          </h2>
+          <p class="text-xs text-slate-500 mt-0.5">
+            換算公式：濃度 = (訊號 − 截距) ÷ 斜率 × 稀釋倍數
+          </p>
+        </div>
+        <button id="btnAddSampleRow" class="inline-flex items-center text-xs font-semibold text-white bg-slate-800 hover:bg-slate-900 px-3.5 py-2 rounded-lg transition-colors shadow-sm self-start sm:self-auto">
+          <i data-lucide="plus" class="w-4 h-4 mr-1"></i> 新增未知樣品
+        </button>
+      </div>
+
+      <!-- 未知樣品表格 -->
+      <div class="overflow-x-auto mt-4">
+        <table class="w-full text-left border-collapse text-sm">
+          <thead>
+            <tr class="bg-slate-50 text-slate-600 border-b border-slate-200">
+              <th class="py-2.5 px-3 font-semibold w-12 text-center">#</th>
+              <th class="py-2.5 px-3 font-semibold min-w-[120px]">樣品名稱</th>
+              <th class="py-2.5 px-3 font-semibold min-w-[130px]">儀器訊號 (y)</th>
+              <th class="py-2.5 px-3 font-semibold min-w-[100px]">稀釋倍數 (DF)</th>
+              <th class="py-2.5 px-3 font-semibold min-w-[150px]">未稀釋濃度 (µg/L)</th>
+              <th class="py-2.5 px-3 font-semibold min-w-[170px] text-indigo-900">最終樣品濃度 (µg/L)</th>
+              <th class="py-2.5 px-3 font-semibold min-w-[140px] text-center">檢量線區間判定</th>
+              <th class="py-2.5 px-2 text-center w-12">刪除</th>
+            </tr>
+          </thead>
+          <tbody id="sampleTableBody" class="divide-y divide-slate-100">
+            <!-- 動態生成未知樣品列 -->
+          </tbody>
+        </table>
+      </div>
+
+      <!-- 計算邏輯說明卡片 -->
+      <div class="mt-5 p-4 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-600 flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between">
+        <div class="flex items-center space-x-2">
+          <i data-lucide="info" class="w-4 h-4 text-indigo-500 shrink-0"></i>
+          <span>檢驗規則：若樣品未經稀釋換算之原始訊號對應濃度超過最高標準品濃度（<span id="lblMaxStdConc" class="font-bold text-slate-800">50</span> µg/L），系統將標記警示。</span>
+        </div>
+        <div class="flex items-center space-x-2">
+          <span class="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-semibold bg-rose-100 text-rose-700">
+            超出檢量線範圍
+          </span>
+          <span class="text-slate-400">建議增加稀釋倍數重新上機測試</span>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- 頁尾 -->
+  <footer class="mt-12 py-6 border-t border-slate-200 text-center text-xs text-slate-400">
+    檢量線線性迴歸計算平台 · 符合實驗室規範有效位數與線性驗證
+  </footer>
+
+  <!-- JavaScript 核心邏輯 -->
+  <script>
+    // 預設測試數據
+    const initialStdData = [
+      { conc: 0, signal: 0.004 },
+      { conc: 1, signal: 0.084 },
+      { conc: 5, signal: 0.404 },
+      { conc: 10, signal: 0.804 },
+      { conc: 50, signal: 4.004 }
+    ];
+
+    const initialSampleData = [
+      { name: '樣品 A', signal: 0.244, df: 10 }
+    ];
+
+    let currentRegression = null;
+    let chartInstance = null;
+
+    // 格式化為 6 位有效數字
+    function formatSignificantDigits(num, digits = 6) {
+      if (num === null || num === undefined || isNaN(num)) return '--';
+      if (num === 0) return '0.00000';
+      // 避免浮點數微小誤差
+      const rounded = Number(num.toPrecision(digits));
+      return rounded.toString();
+    }
+
+    // 初始化圖表
+    function initChart() {
+      const ctx = document.getElementById('calibrationChart').getContext('2d');
+      chartInstance = new Chart(ctx, {
+        type: 'scatter',
+        data: {
+          datasets: [
+            {
+              label: '標準品測定點 (Standard Points)',
+              data: [],
+              backgroundColor: '#4f46e5',
+              borderColor: '#4338ca',
+              pointRadius: 6,
+              pointHoverRadius: 8,
+              borderWidth: 2,
+              order: 2
+            },
+            {
+              type: 'line',
+              label: '最佳擬合線性檢量線 (Linear Fit)',
+              data: [],
+              borderColor: '#6366f1',
+              borderWidth: 2.5,
+              borderDash: [],
+              fill: false,
+              pointRadius: 0,
+              tension: 0,
+              order: 3
+            },
+            {
+              label: '未知樣品對應點 (Samples)',
+              data: [],
+              backgroundColor: '#f59e0b',
+              borderColor: '#d97706',
+              pointRadius: 7,
+              pointHoverRadius: 9,
+              pointStyle: 'triangle',
+              borderWidth: 2,
+              order: 1
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: {
+              position: 'top',
+              labels: {
+                usePointStyle: true,
+                font: { family: "'Noto Sans TC', sans-serif", size: 12 }
+              }
+            },
+            tooltip: {
+              callbacks: {
+                label: function(context) {
+                  const label = context.dataset.label || '';
+                  return `${label}: 濃度 ${context.parsed.x} µg/L, 訊號 ${context.parsed.y}`;
+                }
+              }
+            }
+          },
+          scales: {
+            x: {
+              type: 'linear',
+              position: 'bottom',
+              title: {
+                display: true,
+                text: '標準濃度 Conc. (µg/L)',
+                font: { family: "'Noto Sans TC', sans-serif", weight: 'bold', size: 12 }
+              },
+              grid: { color: '#f1f5f9' }
+            },
+            y: {
+              title: {
+                display: true,
+                text: '儀器訊號 Response',
+                font: { family: "'Noto Sans TC', sans-serif", weight: 'bold', size: 12 }
+              },
+              grid: { color: '#f1f5f9' }
+            }
+          }
+        }
+      });
+    }
+
+    // 渲染標準品輸入表格
+    function renderStdTable(data) {
+      const tbody = document.getElementById('stdTableBody');
+      tbody.innerHTML = '';
+      data.forEach((item, index) => {
+        const row = document.createElement('tr');
+        row.className = 'hover:bg-slate-50 transition-colors';
+        row.innerHTML = `
+          <td class="py-2 px-3 text-center font-medium text-slate-400">${index + 1}</td>
+          <td class="py-1.5 px-3">
+            <input type="number" step="any" class="std-conc w-full px-2.5 py-1.5 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none" value="${item.conc ?? ''}" placeholder="濃度">
+          </td>
+          <td class="py-1.5 px-3">
+            <input type="number" step="any" class="std-signal w-full px-2.5 py-1.5 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none" value="${item.signal ?? ''}" placeholder="訊號">
+          </td>
+          <td class="py-1.5 px-2 text-center">
+            <button class="btn-del-std text-slate-400 hover:text-rose-600 transition-colors p-1" data-index="${index}" title="刪除此列">
+              <i data-lucide="trash-2" class="w-4 h-4"></i>
+            </button>
+          </td>
+        `;
+        tbody.appendChild(row);
+      });
+
+      updateStdControls();
+      lucide.createIcons();
+    }
+
+    // 更新標準品列操作狀態 (5~8 組上限下限約束)
+    function updateStdControls() {
+      const rows = document.querySelectorAll('#stdTableBody tr');
+      const count = rows.length;
+      document.getElementById('stdPointsCount').innerText = `${count} / 8 點`;
+
+      const addBtn = document.getElementById('btnAddStdRow');
+      if (count >= 8) {
+        addBtn.disabled = true;
+        addBtn.classList.add('opacity-50', 'cursor-not-allowed');
+      } else {
+        addBtn.disabled = false;
+        addBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+      }
+
+      // 刪除按鈕
+      const delButtons = document.querySelectorAll('.btn-del-std');
+      delButtons.forEach(btn => {
+        if (count <= 5) {
+          btn.disabled = true;
+          btn.classList.add('opacity-30', 'cursor-not-allowed');
+        } else {
+          btn.disabled = false;
+          btn.classList.remove('opacity-30', 'cursor-not-allowed');
+        }
+      });
+    }
+
+    // 渲染未知樣品表格
+    function renderSampleTable(samples) {
+      const tbody = document.getElementById('sampleTableBody');
+      tbody.innerHTML = '';
+      samples.forEach((s, idx) => {
+        appendSampleRow(s.name, s.signal, s.df);
+      });
+    }
+
+    // 新增樣品列
+    function appendSampleRow(name = '', signal = '', df = 1) {
+      const tbody = document.getElementById('sampleTableBody');
+      const idx = tbody.children.length;
+      const row = document.createElement('tr');
+      row.className = 'sample-row hover:bg-slate-50 transition-colors';
+      row.innerHTML = `
+        <td class="py-2.5 px-3 text-center font-medium text-slate-400 sample-index">${idx + 1}</td>
+        <td class="py-2 px-3">
+          <input type="text" class="sample-name w-full px-2.5 py-1.5 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none" value="${name}" placeholder="樣品名稱">
+        </td>
+        <td class="py-2 px-3">
+          <input type="number" step="any" class="sample-signal w-full px-2.5 py-1.5 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none" value="${signal}" placeholder="訊號值">
+        </td>
+        <td class="py-2 px-3">
+          <input type="number" step="any" min="0.000001" class="sample-df w-full px-2.5 py-1.5 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none" value="${df}" placeholder="稀釋倍數">
+        </td>
+        <td class="py-2 px-3">
+          <span class="sample-raw-conc font-mono text-sm text-slate-700 font-medium">--</span>
+        </td>
+        <td class="py-2 px-3">
+          <span class="sample-final-conc font-mono text-base font-bold text-indigo-700">--</span>
+        </td>
+        <td class="py-2 px-3 text-center">
+          <span class="sample-status inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-slate-100 text-slate-500">
+            等待計算
+          </span>
+        </td>
+        <td class="py-2 px-2 text-center">
+          <button class="btn-del-sample text-slate-400 hover:text-rose-600 transition-colors p-1" title="刪除此樣品">
+            <i data-lucide="trash-2" class="w-4 h-4"></i>
+          </button>
+        </td>
+      `;
+      tbody.appendChild(row);
+      lucide.createIcons();
+      reindexSamples();
+    }
+
+    function reindexSamples() {
+      const rows = document.querySelectorAll('#sampleTableBody tr');
+      rows.forEach((r, i) => {
+        const idxElem = r.querySelector('.sample-index');
+        if (idxElem) idxElem.innerText = i + 1;
+      });
+    }
+
+    // 收集標準品資料
+    function collectStdData() {
+      const concInputs = document.querySelectorAll('.std-conc');
+      const sigInputs = document.querySelectorAll('.std-signal');
+      const points = [];
+
+      for (let i = 0; i < concInputs.length; i++) {
+        const xVal = concInputs[i].value.trim();
+        const yVal = sigInputs[i].value.trim();
+        if (xVal !== '' && yVal !== '') {
+          const x = parseFloat(xVal);
+          const y = parseFloat(yVal);
+          if (!isNaN(x) && !isNaN(y)) {
+            points.push({ x, y });
+          }
+        }
+      }
+      return points;
+    }
+
+    // 最小平方法線性迴歸運算
+    function calculateLinearRegression(points) {
+      const n = points.length;
+      if (n < 2) return null;
+
+      let sumX = 0, sumY = 0, sumXY = 0, sumX2 = 0, sumY2 = 0;
+      for (const p of points) {
+        sumX += p.x;
+        sumY += p.y;
+        sumXY += (p.x * p.y);
+        sumX2 += (p.x * p.x);
+        sumY2 += (p.y * p.y);
+      }
+
+      const denominator = (n * sumX2) - (sumX * sumX);
+      if (Math.abs(denominator) < 1e-15) {
+        return null; // 無法計算垂直線或無變化之奇異矩陣
+      }
+
+      // 斜率 (Slope, m)
+      const slope = ((n * sumXY) - (sumX * sumY)) / denominator;
+      // 截距 (Intercept, c)
+      const intercept = (sumY - (slope * sumX)) / n;
+
+      // 決定係數 R²
+      const ssTotal = sumY2 - (sumY * sumY) / n;
+      const ssResidual = points.reduce((acc, p) => {
+        const yPred = slope * p.x + intercept;
+        return acc + Math.pow(p.y - yPred, 2);
+      }, 0);
+
+      let r2 = 0;
+      if (Math.abs(ssTotal) > 1e-15) {
+        r2 = 1 - (ssResidual / ssTotal);
+        if (r2 < 0) r2 = 0;
+        if (r2 > 1) r2 = 1;
+      } else {
+        r2 = 1; // 所有 Y 完全相同時的邊界處理
+      }
+
+      return {
+        slope,
+        intercept,
+        r2,
+        points,
+        minX: Math.min(...points.map(p => p.x)),
+        maxX: Math.max(...points.map(p => p.x))
+      };
+    }
+
+    // 顯示警示通知條
+    function showNotification(type, title, message) {
+      const alertBox = document.getElementById('statusAlert');
+      const icon = document.getElementById('statusIcon');
+      const titleElem = document.getElementById('statusTitle');
+      const descElem = document.getElementById('statusDesc');
+
+      alertBox.classList.remove('hidden', 'bg-rose-50', 'border-rose-200', 'text-rose-800', 'bg-amber-50', 'border-amber-200', 'text-amber-800', 'bg-emerald-50', 'border-emerald-200', 'text-emerald-800');
+
+      if (type === 'error') {
+        alertBox.classList.add('bg-rose-50', 'border-rose-200', 'text-rose-900');
+        icon.innerHTML = `<i data-lucide="alert-octagon" class="w-5 h-5 text-rose-600"></i>`;
+      } else if (type === 'warning') {
+        alertBox.classList.add('bg-amber-50', 'border-amber-200', 'text-amber-900');
+        icon.innerHTML = `<i data-lucide="alert-triangle" class="w-5 h-5 text-amber-600"></i>`;
+      } else {
+        alertBox.classList.add('bg-emerald-50', 'border-emerald-200', 'text-emerald-900');
+        icon.innerHTML = `<i data-lucide="check-circle" class="w-5 h-5 text-emerald-600"></i>`;
+      }
+
+      titleElem.innerText = title;
+      descElem.innerText = message;
+      alertBox.classList.remove('hidden');
+      lucide.createIcons();
+    }
+
+    function hideNotification() {
+      document.getElementById('statusAlert').classList.add('hidden');
+    }
+
+    // 核心執行計算與畫面同步
+    function executeCalculation() {
+      hideNotification();
+      const points = collectStdData();
+
+      // 檢查標準點數量規範 (5 至 8 組)
+      if (points.length < 5) {
+        showNotification('error', '標準品點位不足', `目前有效標準點僅 ${points.length} 組，請依規範填寫至少 5 組有效濃度與訊號數值。`);
+        return;
+      }
+
+      const reg = calculateLinearRegression(points);
+      if (!reg || isNaN(reg.slope)) {
+        showNotification('error', '回歸計算失敗', '輸入之標準品數值無法進行線性迴歸，請確認濃度是否有重複或異常。');
+        return;
+      }
+
+      currentRegression = reg;
+
+      // 更新最高濃度提示
+      document.getElementById('lblMaxStdConc').innerText = reg.maxX;
+
+      // 更新數值顯示（6位有效數字）
+      document.getElementById('resSlope').innerText = formatSignificantDigits(reg.slope, 6);
+      document.getElementById('resIntercept').innerText = formatSignificantDigits(reg.intercept, 6);
+      document.getElementById('resR2').innerText = formatSignificantDigits(reg.r2, 6);
+
+      // 方程式字串生成
+      const sign = reg.intercept >= 0 ? '+' : '-';
+      const absIntercept = Math.abs(reg.intercept);
+      document.getElementById('resEquation').innerText = 
+        `y = ${formatSignificantDigits(reg.slope, 6)} · x ${sign} ${formatSignificantDigits(absIntercept, 6)}`;
+
+      // R² 品質評估與警示樣式
+      const cardR2 = document.getElementById('cardR2');
+      const badgeR2 = document.getElementById('badgeR2Hint');
+      const iconR2 = document.getElementById('iconR2Status');
+
+      if (reg.r2 < 0.995) {
+        // R² 小於 0.995 警示
+        cardR2.className = 'bg-rose-50 p-4 rounded-xl border border-rose-300 shadow-sm flex flex-col justify-between';
+        document.getElementById('resR2').className = 'text-xl font-bold font-mono text-rose-600 tracking-tight';
+        badgeR2.className = 'text-[11px] text-rose-600 font-bold mt-1 flex items-center gap-1';
+        badgeR2.innerHTML = `<i data-lucide="alert-circle" class="w-3.5 h-3.5"></i> 檢量線線性不佳 (R² < 0.995)`;
+        iconR2.className = 'w-4 h-4 text-rose-500';
+
+        showNotification('error', '檢量線品質警示', '檢量線線性不佳！決定係數 R² 低於 0.995 門檻，建議檢查配製濃度或重測標準品。');
+      } else {
+        // 線性優良
+        cardR2.className = 'bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col justify-between';
+        document.getElementById('resR2').className = 'text-xl font-bold font-mono text-slate-900 tracking-tight';
+        badgeR2.className = 'text-[11px] text-emerald-600 font-medium mt-1';
+        badgeR2.innerHTML = `線性良好 (R² ≥ 0.995)`;
+        iconR2.className = 'w-4 h-4 text-emerald-500';
+      }
+
+      // 計算未知樣品
+      const samplePointsForChart = updateSamplesCalculation(reg);
+
+      // 繪製或更新圖表
+      updateChartVisual(reg, samplePointsForChart);
+      lucide.createIcons();
+    }
+
+    // 計算所有未知樣品
+    function updateSamplesCalculation(reg) {
+      const sampleRows = document.querySelectorAll('#sampleTableBody tr');
+      const samplePoints = [];
+
+      sampleRows.forEach(row => {
+        const sigInput = row.querySelector('.sample-signal');
+        const dfInput = row.querySelector('.sample-df');
+        const rawConcElem = row.querySelector('.sample-raw-conc');
+        const finalConcElem = row.querySelector('.sample-final-conc');
+        const statusElem = row.querySelector('.sample-status');
+
+        const sigVal = sigInput ? parseFloat(sigInput.value) : NaN;
+        const dfVal = dfInput ? parseFloat(dfInput.value) : 1;
+
+        if (isNaN(sigVal) || !reg || Math.abs(reg.slope) < 1e-15) {
+          rawConcElem.innerText = '--';
+          finalConcElem.innerText = '--';
+          statusElem.className = 'sample-status inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-slate-100 text-slate-500';
+          statusElem.innerText = '等待計算';
+          return;
+        }
+
+        const validDF = (!isNaN(dfVal) && dfVal > 0) ? dfVal : 1;
+
+        // 公式：濃度 = (訊號 - 截距) / 斜率 * 稀釋倍數
+        // 未稀釋濃度 (原始訊號對應濃度)：(y - c) / m
+        const rawConc = (sigVal - reg.intercept) / reg.slope;
+        // 最終濃度：未稀釋濃度 * DF
+        const finalConc = rawConc * validDF;
+
+        rawConcElem.innerText = formatSignificantDigits(rawConc, 6);
+        finalConcElem.innerText = formatSignificantDigits(finalConc, 6);
+
+        // 收集繪圖資料點 (X: 未稀釋濃度, Y: 訊號)
+        samplePoints.push({ x: rawConc, y: sigVal });
+
+        // 判定是否超出檢量線最高濃度範圍
+        if (rawConc > reg.maxX) {
+          statusElem.className = 'sample-status inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold bg-rose-100 text-rose-700 animate-pulse border border-rose-200';
+          statusElem.innerHTML = `<i data-lucide="alert-triangle" class="w-3.5 h-3.5 mr-1 inline"></i>超出檢量線範圍`;
+        } else if (rawConc < reg.minX) {
+          statusElem.className = 'sample-status inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-700 border border-amber-200';
+          statusElem.innerText = '低於標準點範圍';
+        } else {
+          statusElem.className = 'sample-status inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-emerald-100 text-emerald-700 border border-emerald-200';
+          statusElem.innerText = '正常範圍內';
+        }
+      });
+
+      return samplePoints;
+    }
+
+    // 更新圖表視覺呈現
+    function updateChartVisual(reg, samplePoints) {
+      if (!chartInstance) return;
+
+      // 1. 標準品散佈點
+      chartInstance.data.datasets[0].data = reg.points;
+
+      // 2. 迴歸直線 (由 0 或 minX 延伸至 maxX 的 1.05 倍)
+      const startX = Math.min(0, reg.minX);
+      const endX = Math.max(reg.maxX * 1.08, 1);
+      
+      const lineData = [
+        { x: startX, y: reg.slope * startX + reg.intercept },
+        { x: endX, y: reg.slope * endX + reg.intercept }
+      ];
+      chartInstance.data.datasets[1].data = lineData;
+
+      // 3. 樣品點
+      chartInstance.data.datasets[2].data = samplePoints || [];
+
+      chartInstance.update();
+    }
+
+    // 匯出為 CSV 報表
+    function exportToCSV() {
+      if (!currentRegression) {
+        showNotification('warning', '提示', '請先點擊「開始計算檢量線」後再匯出報表。');
+        return;
+      }
+
+      let csv = '\uFEFF'; // UTF-8 BOM 防 Excel 亂碼
+      csv += '=== 檢量線分析報告 ===\r\n\r\n';
+      csv += `斜率 (m),${formatSignificantDigits(currentRegression.slope, 6)}\r\n`;
+      csv += `截距 (c),${formatSignificantDigits(currentRegression.intercept, 6)}\r\n`;
+      csv += `決定係數 (R²),${formatSignificantDigits(currentRegression.r2, 6)}\r\n`;
+      csv += `回歸方程式,y = ${formatSignificantDigits(currentRegression.slope, 6)} * x + ${formatSignificantDigits(currentRegression.intercept, 6)}\r\n`;
+      csv += `線性評定,${currentRegression.r2 < 0.995 ? '檢量線線性不佳 (R² < 0.995)' : '線性良好 (R² ≥ 0.995)'}\r\n\r\n`;
+
+      csv += '標準品數據\r\n編號,濃度 (µg/L),儀器訊號\r\n';
+      currentRegression.points.forEach((p, i) => {
+        csv += `${i + 1},${p.x},${p.y}\r\n`;
+      });
+
+      csv += '\r\n未知樣品定量結果\r\n編號,樣品名稱,儀器訊號,稀釋倍數,未稀釋換算濃度 (µg/L),最終樣品濃度 (µg/L),判定狀態\r\n';
+      const rows = document.querySelectorAll('#sampleTableBody tr');
+      rows.forEach((r, i) => {
+        const name = r.querySelector('.sample-name')?.value || `樣品 ${i+1}`;
+        const sig = r.querySelector('.sample-signal')?.value || '';
+        const df = r.querySelector('.sample-df')?.value || '';
+        const raw = r.querySelector('.sample-raw-conc')?.innerText || '';
+        const final = r.querySelector('.sample-final-conc')?.innerText || '';
+        const status = r.querySelector('.sample-status')?.innerText.trim() || '';
+        csv += `"${i + 1}","${name}","${sig}","${df}","${raw}","${final}","${status}"\r\n`;
+      });
+
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+      const link = document.createElement('a');
+      const url = URL.createObjectURL(blob);
+      link.setAttribute('href', url);
+      link.setAttribute('download', `檢量線計算報告_${new Date().toISOString().slice(0,10)}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    }
+
+    // 重設為初始測試資料
+    function loadInitialData() {
+      renderStdTable(initialStdData);
+      renderSampleTable(initialSampleData);
+      executeCalculation();
+    }
+
+    // 事件監聽綁定
+    window.onload = function() {
+      initChart();
+      loadInitialData();
+
+      // 計算按鈕
+      document.getElementById('btnCalculate').addEventListener('click', () => {
+        executeCalculation();
+      });
+
+      // 重設按鈕
+      document.getElementById('btnResetTest').addEventListener('click', () => {
+        loadInitialData();
+      });
+
+      // 匯出報表
+      document.getElementById('btnExportCSV').addEventListener('click', exportToCSV);
+
+      // 新增標準點列 (上限 8 組)
+      document.getElementById('btnAddStdRow').addEventListener('click', () => {
+        const rows = document.querySelectorAll('#stdTableBody tr');
+        if (rows.length >= 8) return;
+
+        const tbody = document.getElementById('stdTableBody');
+        const nextIndex = rows.length + 1;
+        const tr = document.createElement('tr');
+        tr.className = 'hover:bg-slate-50 transition-colors';
+        tr.innerHTML = `
+          <td class="py-2 px-3 text-center font-medium text-slate-400">${nextIndex}</td>
+          <td class="py-1.5 px-3">
+            <input type="number" step="any" class="std-conc w-full px-2.5 py-1.5 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none" placeholder="濃度">
+          </td>
+          <td class="py-1.5 px-3">
+            <input type="number" step="any" class="std-signal w-full px-2.5 py-1.5 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none" placeholder="訊號">
+          </td>
+          <td class="py-1.5 px-2 text-center">
+            <button class="btn-del-std text-slate-400 hover:text-rose-600 transition-colors p-1" title="刪除此列">
+              <i data-lucide="trash-2" class="w-4 h-4"></i>
+            </button>
+          </td>
+        `;
+        tbody.appendChild(tr);
+        updateStdControls();
+        lucide.createIcons();
+      });
+
+      // 刪除標準點列 (事件委派)
+      document.getElementById('stdTableBody').addEventListener('click', (e) => {
+        const delBtn = e.target.closest('.btn-del-std');
+        if (!delBtn) return;
+        const rows = document.querySelectorAll('#stdTableBody tr');
+        if (rows.length <= 5) {
+          showNotification('warning', '無法刪除', '依要求標準點數不得低於 5 組。');
+          return;
+        }
+        delBtn.closest('tr').remove();
+        // 重新編號
+        document.querySelectorAll('#stdTableBody tr').forEach((r, idx) => {
+          r.children[0].innerText = idx + 1;
+        });
+        updateStdControls();
+      });
+
+      // 新增未知樣品列
+      document.getElementById('btnAddSampleRow').addEventListener('click', () => {
+        const count = document.querySelectorAll('#sampleTableBody tr').length;
+        const letter = String.fromCharCode(65 + count);
+        appendSampleRow(`樣品 ${letter}`, '', 1);
+      });
+
+      // 刪除樣品列 (事件委派)
+      document.getElementById('sampleTableBody').addEventListener('click', (e) => {
+        const delBtn = e.target.closest('.btn-del-sample');
+        if (!delBtn) return;
+        delBtn.closest('tr').remove();
+        reindexSamples();
+        if (currentRegression) {
+          const samplePoints = updateSamplesCalculation(currentRegression);
+          updateChartVisual(currentRegression, samplePoints);
+        }
+      });
+
+      // 樣品輸入即時連動計算 (輸入訊號或稀釋倍數即時響應)
+      document.getElementById('sampleTableBody').addEventListener('input', (e) => {
+        if (e.target.classList.contains('sample-signal') || e.target.classList.contains('sample-df')) {
+          if (currentRegression) {
+            const samplePoints = updateSamplesCalculation(currentRegression);
+            updateChartVisual(currentRegression, samplePoints);
+          }
+        }
+      });
+    };
+  </script>
+</body>
+</html>
